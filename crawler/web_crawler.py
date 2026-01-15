@@ -485,8 +485,32 @@ class WebCrawler:
             logger.error(f"Erreur suppression: {e}")
             return False
     
-    def crawl_url(self, url, content_types, max_hits=100):
+    def crawl_url(self, url, content_types, max_hits=100, control=None, stats_cb=None):
         """Crawl avec stratégies anti-blocage avancées"""
+        normalized_types = [ct.lower().strip() for ct in (content_types or [])]
+        if "rss" in normalized_types and "xml" not in normalized_types:
+            normalized_types.append("xml")
+        content_types = normalized_types or ["html"]
+        def should_stop():
+            if control is None:
+                return False
+            stop_event = getattr(control, "stop_event", None)
+            if stop_event is None and isinstance(control, dict):
+                stop_event = control.get("stop_event")
+            return bool(stop_event and stop_event.is_set())
+
+        def wait_if_paused():
+            if control is None:
+                return
+            pause_event = getattr(control, "pause_event", None)
+            if pause_event is None and isinstance(control, dict):
+                pause_event = control.get("pause_event")
+            if pause_event is not None:
+                pause_event.wait()
+
+        if stats_cb:
+            stats_cb("start", {"url": url, "max_hits": max_hits})
+
         collected_data = []
         visited_urls = set()
         urls_to_visit = [url]
@@ -501,8 +525,18 @@ class WebCrawler:
         last_referer = None
         
         while urls_to_visit and len(collected_data) < max_hits:
+            if should_stop():
+                if stats_cb:
+                    stats_cb("stopped", {"url": url})
+                break
+
+            wait_if_paused()
+
             current_url = urls_to_visit.pop(0)
             normalized_url = self.anti_blocking.normalize_url(current_url)
+
+            if stats_cb:
+                stats_cb("attempt", {"url": current_url, "queue": len(urls_to_visit)})
             
             if normalized_url in visited_urls:
                 continue
@@ -644,6 +678,8 @@ class WebCrawler:
                 
                 if data:
                     self.mark_url_crawled(normalized_url, success=True)
+                    if stats_cb:
+                        stats_cb("success", {"url": current_url, "content_type": content_type})
                 
             except requests.exceptions.Timeout:
                 logger.warning(f"⏱️  Timeout: {current_url}")
@@ -651,6 +687,8 @@ class WebCrawler:
                     failed_urls.get(normalized_url, (0, ""))[0] + 1,
                     "Timeout"
                 )
+                if stats_cb:
+                    stats_cb("error", {"url": current_url, "error": "Timeout"})
                 
             except requests.exceptions.ConnectionError as e:
                 logger.warning(f"🔌 Erreur connexion: {current_url}")
@@ -659,10 +697,14 @@ class WebCrawler:
                     "Connection Error"
                 )
                 time.sleep(5)
+                if stats_cb:
+                    stats_cb("error", {"url": current_url, "error": "Connection Error"})
                 
             except requests.exceptions.TooManyRedirects:
                 logger.warning(f"🔄 Trop de redirections: {current_url}")
                 failed_urls[normalized_url] = (999, "Too Many Redirects")
+                if stats_cb:
+                    stats_cb("error", {"url": current_url, "error": "Too Many Redirects"})
                 
             except Exception as e:
                 logger.warning(f"❌ Erreur: {current_url} - {str(e)[:100]}")
@@ -670,9 +712,14 @@ class WebCrawler:
                     failed_urls.get(normalized_url, (0, ""))[0] + 1,
                     str(e)[:100]
                 )
+                if stats_cb:
+                    stats_cb("error", {"url": current_url, "error": str(e)[:100]})
         
         session.close()
         logger.info(f"📊 Résumé: {len(collected_data)} pages collectées, {len(failed_urls)} échecs")
+
+        if stats_cb:
+            stats_cb("done", {"collected": len(collected_data), "failed": len(failed_urls)})
         
         return collected_data
     
@@ -981,7 +1028,7 @@ def main():
             frequency = input("Fréquence (hourly/daily/weekly/monthly) [daily]: ").strip() or 'daily'
             schedule_time = input("Heure (HH:MM) [09:00]: ").strip() or '09:00'
             max_hits = int(input("Max pages [100]: ").strip() or '100')
-            content_types_input = input("Types (html,xml,pdf,text) [html]: ").strip() or 'html'
+            content_types_input = input("Types (html,xml,rss,pdf,text) [html]: ").strip() or 'html'
             content_types = [ct.strip() for ct in content_types_input.split(',')]
             
             source_id = crawler.add_source(

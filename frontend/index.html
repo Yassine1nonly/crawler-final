@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GraphCrawler Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="orb one"></div>
+    <div class="orb two"></div>
+    <div class="wrap">
+      <header class="mast">
+        <div>
+          <div class="eyebrow">GraphCrawler Console</div>
+          <h1>Live Crawl Studio</h1>
+          <p class="lead">
+            Start, pause, and monitor crawls in real time without touching the terminal.
+          </p>
+        </div>
+        <div class="connection" id="connectionStatus">Connecting</div>
+      </header>
+
+      <main class="grid">
+        <section class="panel">
+          <h2>Launch Crawl</h2>
+          <form id="startForm" class="form">
+            <label>
+              Target URL
+              <input type="url" id="urlInput" placeholder="https://example.com" required />
+            </label>
+            <label>
+              Max pages
+              <input type="number" id="maxPagesInput" min="1" max="500" value="5" />
+            </label>
+            <fieldset>
+              <legend>Content types</legend>
+              <div class="chips">
+                <label><input type="checkbox" value="html" checked /> HTML</label>
+                <label><input type="checkbox" value="xml" /> XML</label>
+                <label><input type="checkbox" value="rss" /> RSS</label>
+                <label><input type="checkbox" value="pdf" /> PDF</label>
+                <label><input type="checkbox" value="text" /> Text</label>
+              </div>
+            </fieldset>
+            <button type="submit" class="primary">Start crawler</button>
+          </form>
+
+          <div class="divider"></div>
+
+          <h2>Overview</h2>
+          <div class="stats-grid" id="overviewStats">
+            <div class="stat">
+              <span>Active</span>
+              <strong id="statRunning">0</strong>
+            </div>
+            <div class="stat">
+              <span>Paused</span>
+              <strong id="statPaused">0</strong>
+            </div>
+            <div class="stat">
+              <span>Stopped</span>
+              <strong id="statStopped">0</strong>
+            </div>
+            <div class="stat">
+              <span>Total pages</span>
+              <strong id="statPages">0</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel wide">
+          <div class="panel-head">
+            <h2>Active Jobs</h2>
+            <span class="muted" id="jobsCount">0 jobs</span>
+          </div>
+          <div class="jobs" id="jobsList"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
