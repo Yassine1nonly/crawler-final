@@ -14,6 +14,7 @@ const statPages = document.getElementById("statPages");
 const startForm = document.getElementById("startForm");
 const urlInput = document.getElementById("urlInput");
 const maxPagesInput = document.getElementById("maxPagesInput");
+const keywordsInput = document.getElementById("keywordsInput");
 
 const formatNumber = (value) => {
   if (Number.isNaN(value) || value === null || value === undefined) {
@@ -115,6 +116,10 @@ startForm.addEventListener("submit", async (event) => {
     (checkbox) => checkbox.value
   );
   const maxPages = parseInt(maxPagesInput.value, 10) || 5;
+  const keywords = (keywordsInput.value || "")
+    .split(",")
+    .map((word) => word.trim())
+    .filter(Boolean);
 
   const response = await fetch("/api/crawl/start", {
     method: "POST",
@@ -123,11 +128,13 @@ startForm.addEventListener("submit", async (event) => {
       url,
       max_pages: maxPages,
       content_types: contentTypes.length ? contentTypes : ["html"],
+      keywords,
     }),
   });
 
   if (response.ok) {
     urlInput.value = "";
+    keywordsInput.value = "";
   }
 });
 

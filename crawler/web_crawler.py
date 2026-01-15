@@ -440,11 +440,13 @@ class WebCrawler:
     
     def add_source(self, url, source_type='website',
                    frequency='daily', schedule_time='09:00',
-                   max_hits=100, content_types=None,
+                   max_hits=100, content_types=None, keywords=None,
                    enabled=True):
         """Ajoute une source"""
         if content_types is None:
             content_types = ['html', 'text']
+        if keywords is None:
+            keywords = []
         
         source = {
             'url': url,
@@ -453,6 +455,7 @@ class WebCrawler:
             'schedule_time': schedule_time,
             'max_hits': max_hits,
             'content_types': content_types,
+            'keywords': keywords,
             'enabled': enabled,
             'last_crawl': None,
             'status': 'pending',
@@ -485,12 +488,13 @@ class WebCrawler:
             logger.error(f"Erreur suppression: {e}")
             return False
     
-    def crawl_url(self, url, content_types, max_hits=100, control=None, stats_cb=None):
+    def crawl_url(self, url, content_types, max_hits=100, control=None, stats_cb=None, keywords=None):
         """Crawl avec stratégies anti-blocage avancées"""
         normalized_types = [ct.lower().strip() for ct in (content_types or [])]
         if "rss" in normalized_types and "xml" not in normalized_types:
             normalized_types.append("xml")
         content_types = normalized_types or ["html"]
+        keywords = [k.strip().lower() for k in (keywords or []) if k.strip()]
         def should_stop():
             if control is None:
                 return False
@@ -676,7 +680,7 @@ class WebCrawler:
                             collected_data.append(data)
                             logger.info(f"✅ Page collectée: {data['title'][:60]}")
                 
-                if data:
+                if data and self._is_relevant(data, keywords):
                     self.mark_url_crawled(normalized_url, success=True)
                     if stats_cb:
                         stats_cb("success", {"url": current_url, "content_type": content_type})
@@ -825,6 +829,19 @@ class WebCrawler:
         except Exception as e:
             logger.error(f"Erreur texte: {e}")
             return None
+
+    def _is_relevant(self, data, keywords):
+        if not keywords:
+            return True
+
+        haystack = " ".join([
+            str(data.get('title', '')),
+            str(data.get('description', '')),
+            str(data.get('content', '')),
+            " ".join(data.get('keywords', []) or []),
+        ]).lower()
+
+        return any(keyword in haystack for keyword in keywords)
     
     def crawl_source(self, source_id):
         """Crawl une source"""
@@ -846,7 +863,8 @@ class WebCrawler:
             collected_data = self.crawl_url(
                 source['url'],
                 source['content_types'],
-                source['max_hits']
+                source['max_hits'],
+                keywords=source.get('keywords', [])
             )
             
             count = 0
@@ -1030,6 +1048,8 @@ def main():
             max_hits = int(input("Max pages [100]: ").strip() or '100')
             content_types_input = input("Types (html,xml,rss,pdf,text) [html]: ").strip() or 'html'
             content_types = [ct.strip() for ct in content_types_input.split(',')]
+            keywords_input = input("Mots-cles (finance, education, ... ) [vide]: ").strip()
+            keywords = [kw.strip() for kw in keywords_input.split(',') if kw.strip()]
             
             source_id = crawler.add_source(
                 url=url,
@@ -1037,7 +1057,8 @@ def main():
                 frequency=frequency,
                 schedule_time=schedule_time,
                 max_hits=max_hits,
-                content_types=content_types
+                content_types=content_types,
+                keywords=keywords
             )
             print(f"\n✅ Source ajoutée! ID: {source_id}")
         

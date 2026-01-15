@@ -42,7 +42,7 @@ class CrawlerManager:
         self._jobs: Dict[str, Dict] = {}
         self._subscribers: List[Queue] = []
 
-    def start(self, url: str, max_pages: int, content_types: List[str]) -> str:
+    def start(self, url: str, max_pages: int, content_types: List[str], keywords: List[str]) -> str:
         job_id = uuid.uuid4().hex[:8]
         control = CrawlerControl()
         stats = CrawlerStats(
@@ -63,7 +63,7 @@ class CrawlerManager:
 
         thread = threading.Thread(
             target=self._run_job,
-            args=(job_id, url, max_pages, content_types, control),
+            args=(job_id, url, max_pages, content_types, keywords, control),
             daemon=True,
         )
 
@@ -73,6 +73,7 @@ class CrawlerManager:
                 "control": control,
                 "stats": stats,
                 "content_types": content_types,
+                "keywords": keywords,
             }
 
         self._publish({"type": "job_started", "job": stats.to_dict()})
@@ -136,7 +137,7 @@ class CrawlerManager:
             stats = job["stats"].to_dict()
         self._publish({"type": "stats", "jobs": [stats]})
 
-    def _run_job(self, job_id: str, url: str, max_pages: int, content_types: List[str], control: CrawlerControl) -> None:
+    def _run_job(self, job_id: str, url: str, max_pages: int, content_types: List[str], keywords: List[str], control: CrawlerControl) -> None:
         crawler = WebCrawler()
 
         def stats_cb(event: str, payload: Dict) -> None:
@@ -147,6 +148,7 @@ class CrawlerManager:
                 url,
                 content_types=content_types,
                 max_hits=max_pages,
+                keywords=keywords,
                 control=control,
                 stats_cb=stats_cb,
             )

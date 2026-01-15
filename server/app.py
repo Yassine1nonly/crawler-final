@@ -41,7 +41,11 @@ def start_crawl():
     if not isinstance(content_types, list):
         content_types = ["html"]
 
-    job_id = manager.start(url, max_pages=max_pages, content_types=content_types)
+    keywords = payload.get("keywords") or []
+    if not isinstance(keywords, list):
+        keywords = []
+
+    job_id = manager.start(url, max_pages=max_pages, content_types=content_types, keywords=keywords)
     return jsonify({"job_id": job_id})
 
 
