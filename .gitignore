@@ -4,3 +4,4 @@ nom_env/
 __pycache__/
 *.pyc
 env
+llm/env
