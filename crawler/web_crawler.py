@@ -556,6 +556,8 @@ class WebCrawler:
             if not self.check_robots_txt(current_url):
                 logger.info(f"⛔ Bloqué par robots.txt: {current_url}")
                 failed_urls[normalized_url] = (999, "robots.txt")
+                if stats_cb:
+                    stats_cb("error", {"url": current_url, "error": "Blocked by robots.txt"})
                 continue
             
             # Éviter de re-crawler trop vite
@@ -614,6 +616,8 @@ class WebCrawler:
                         failed_urls.get(normalized_url, (0, ""))[0] + 1,
                         f"HTTP {response.status_code}"
                     )
+                    if stats_cb:
+                        stats_cb("error", {"url": current_url, "error": f"HTTP {response.status_code}"})
                     time.sleep(5)
                     continue
                 
@@ -629,10 +633,11 @@ class WebCrawler:
                 content_type = response.headers.get('Content-Type', '').lower()
                 data = None
                 
+                data = None
+
                 if 'html' in content_type and 'html' in content_types:
                     data = self._process_html(current_url, response.content)
                     if data:
-                        collected_data.append(data)
                         logger.info(f"✅ Collecté: {data['title'][:60]}")
                         
                         # Extraire liens si besoin
@@ -657,19 +662,16 @@ class WebCrawler:
                 elif 'xml' in content_type and 'xml' in content_types:
                     data = self._process_xml(current_url, response.content)
                     if data:
-                        collected_data.append(data)
                         logger.info(f"✅ XML collecté: {data['title'][:60]}")
                 
                 elif 'pdf' in content_type and 'pdf' in content_types:
                     data = self._process_pdf(current_url, response.content)
                     if data:
-                        collected_data.append(data)
                         logger.info(f"✅ PDF collecté: {data['title'][:60]}")
                 
                 elif 'text' in content_type and 'text' in content_types:
                     data = self._process_text(current_url, response.text)
                     if data:
-                        collected_data.append(data)
                         logger.info(f"✅ Texte collecté: {data['title'][:60]}")
                 
                 else:
@@ -677,13 +679,15 @@ class WebCrawler:
                     if 'html' in content_types:
                         data = self._process_html(current_url, response.content)
                         if data:
-                            collected_data.append(data)
                             logger.info(f"✅ Page collectée: {data['title'][:60]}")
                 
                 if data and self._is_relevant(data, keywords):
+                    collected_data.append(data)
                     self.mark_url_crawled(normalized_url, success=True)
                     if stats_cb:
                         stats_cb("success", {"url": current_url, "content_type": content_type})
+                elif data and stats_cb:
+                    stats_cb("error", {"url": current_url, "error": "Filtered by keywords"})
                 
             except requests.exceptions.Timeout:
                 logger.warning(f"⏱️  Timeout: {current_url}")

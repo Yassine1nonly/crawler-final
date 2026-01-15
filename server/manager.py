@@ -144,7 +144,7 @@ class CrawlerManager:
             self._handle_event(job_id, event, payload)
 
         try:
-            crawler.crawl_url(
+            results = crawler.crawl_url(
                 url,
                 content_types=content_types,
                 max_hits=max_pages,
@@ -152,6 +152,15 @@ class CrawlerManager:
                 control=control,
                 stats_cb=stats_cb,
             )
+            stored = 0
+            for item in results:
+                item["source_id"] = job_id
+                item["keywords_filter"] = keywords
+                try:
+                    crawler.data_collection.insert_one(item)
+                    stored += 1
+                except Exception:
+                    pass
         except Exception as exc:
             self._handle_event(job_id, "error", {"url": url, "error": str(exc)})
             self._set_status(job_id, "error")
