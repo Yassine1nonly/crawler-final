@@ -69,6 +69,7 @@ const buildJobCard = (job) => {
           <span class="badge ${job.status}">${job.status}</span>
           <button class="action-btn" data-action="${pauseAction}">${pauseLabel}</button>
           <button class="action-btn stop" data-action="stop">Stop</button>
+          <button class="action-btn" data-action="delete">Delete</button>
         </div>
       </div>
       <div class="job-grid">
@@ -117,7 +118,7 @@ startForm.addEventListener("submit", async (event) => {
   );
   const maxPages = parseInt(maxPagesInput.value, 10) || 5;
   const keywords = (keywordsInput.value || "")
-    .split(",")
+    .split(/[,\\s]+/)
     .map((word) => word.trim())
     .filter(Boolean);
 
@@ -152,6 +153,10 @@ jobsList.addEventListener("click", async (event) => {
     await postAction("/api/crawl/resume", { job_id: jobId });
   } else if (action === "stop") {
     await postAction("/api/crawl/stop", { job_id: jobId });
+  } else if (action === "delete") {
+    await postAction("/api/crawl/delete", { job_id: jobId });
+    state.jobs = state.jobs.filter((job) => job.job_id !== jobId);
+    renderJobs();
   }
 });
 
@@ -164,6 +169,10 @@ const connectStream = () => {
     const payload = JSON.parse(event.data);
     if (payload.type === "snapshot") {
       state.jobs = payload.jobs || [];
+      renderJobs();
+    }
+    if (payload.type === "job_deleted") {
+      state.jobs = state.jobs.filter((job) => job.job_id !== payload.job_id);
       renderJobs();
     }
     if (payload.type === "stats") {

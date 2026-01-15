@@ -42,7 +42,9 @@ def start_crawl():
         content_types = ["html"]
 
     keywords = payload.get("keywords") or []
-    if not isinstance(keywords, list):
+    if isinstance(keywords, str):
+        keywords = [k.strip() for k in keywords.replace(",", " ").split() if k.strip()]
+    elif not isinstance(keywords, list):
         keywords = []
 
     job_id = manager.start(url, max_pages=max_pages, content_types=content_types, keywords=keywords)
@@ -78,6 +80,17 @@ def stop_crawl():
     if not job_id:
         return jsonify({"error": "job_id is required"}), 400
     if not manager.stop(job_id):
+        return jsonify({"error": "job not found"}), 404
+    return jsonify({"ok": True})
+
+
+@app.route("/api/crawl/delete", methods=["POST"])
+def delete_crawl():
+    payload = request.get_json(silent=True) or {}
+    job_id = payload.get("job_id")
+    if not job_id:
+        return jsonify({"error": "job_id is required"}), 400
+    if not manager.delete(job_id):
         return jsonify({"error": "job not found"}), 404
     return jsonify({"ok": True})
 

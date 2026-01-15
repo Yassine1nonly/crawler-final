@@ -17,6 +17,10 @@ python-dotenv>=1.0.0
 # Web app
 Flask>=3.0.0
 
+# Browser fallbacks
+playwright>=1.43.0
+selenium>=4.20.0
+
 # Graphes et visualisation
 networkx>=3.2.0
 matplotlib>=3.8.0

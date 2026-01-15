@@ -95,7 +95,7 @@ class AdvancedAntiBlockingStrategy:
             'User-Agent': self.get_random_user_agent(),
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language': random.choice(self.LANGUAGES),
-            'Accept-Encoding': 'gzip, deflate, br',
+            'Accept-Encoding': 'gzip, deflate',
             'DNT': '1',
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
@@ -127,23 +127,24 @@ class AdvancedAntiBlockingStrategy:
     def calculate_intelligent_delay(base_delay=2, domain=None, is_retry=False):
         """Calcule un délai intelligent basé sur le contexte"""
         if is_retry:
-            # Délai plus long en cas de retry
-            return base_delay * 2 + random.uniform(2, 5)
+            # Délai plus long en cas de retry (réduit)
+            return base_delay * 1.5 + random.uniform(0.2, 0.8)
         
         # Variation naturelle humaine
-        human_variance = random.uniform(-0.5, 1.5)
+        human_variance = random.uniform(-0.1, 0.3)
         
         # Ajout de patterns humains (parfois très rapide, parfois lent)
-        if random.random() < 0.1:  # 10% du temps, très rapide
-            return base_delay * 0.5 + human_variance
-        elif random.random() < 0.15:  # 15% du temps, lent
-            return base_delay * 2 + human_variance
+        if random.random() < 0.2:  # 20% du temps, très rapide
+            return base_delay * 0.3 + human_variance
+        elif random.random() < 0.08:  # 8% du temps, lent
+            return base_delay * 1.3 + human_variance
         
         return base_delay + human_variance
     
     def create_advanced_session(self, use_proxy=False, verify_ssl=True):
         """Crée une session avec configuration avancée"""
         session = requests.Session()
+        session.trust_env = False  # Ignore system proxy env (can break crawling)
         
         # Désactiver warnings SSL si nécessaire
         if not verify_ssl:
@@ -190,6 +191,7 @@ class AdvancedAntiBlockingStrategy:
     def normalize_url(url):
         """Normalise une URL pour éviter les doublons"""
         parsed = urlparse(url)
+        path = parsed.path or "/"
         
         # Enlever le fragment (#)
         url_without_fragment = url.split('#')[0]
@@ -199,9 +201,9 @@ class AdvancedAntiBlockingStrategy:
             params = parse_qs(parsed.query)
             sorted_params = sorted(params.items())
             normalized_query = urlencode(sorted_params, doseq=True)
-            normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{normalized_query}"
+            normalized = f"{parsed.scheme}://{parsed.netloc}{path}?{normalized_query}"
         else:
-            normalized = url_without_fragment
+            normalized = f"{parsed.scheme}://{parsed.netloc}{path}"
         
         # Enlever le trailing slash sauf pour la racine
         if normalized.endswith('/') and parsed.path != '/':
@@ -215,7 +217,7 @@ class AdaptiveRateLimiter:
     
     def __init__(self):
         self.domain_timers = {}
-        self.domain_delays = defaultdict(lambda: 2.0)  # Délai initial 2s
+        self.domain_delays = defaultdict(lambda: 0.2)  # Délai initial agressif
         self.domain_429_count = defaultdict(int)
         self.lock = threading.Lock()
     
@@ -250,10 +252,10 @@ class AdaptiveRateLimiter:
     def report_success(self, domain):
         """Signale un succès et réduit légèrement le délai"""
         with self.lock:
-            if self.domain_delays[domain] > 2.0:
+            if self.domain_delays[domain] > 0.2:
                 self.domain_delays[domain] = max(
                     self.domain_delays[domain] * 0.95,
-                    2.0  # Min 2 secondes
+                    0.2  # Min 0.2 seconde
                 )
 
 
@@ -294,76 +296,87 @@ class WebCrawler:
     def __init__(self, mongo_uri="mongodb://localhost:27017/", 
                  db_name="web_crawler_db",
                  use_proxy=False,
-                 base_delay=2,
-                 respect_robots_txt=True,
+                 base_delay=0.2,
+                 respect_robots_txt=False,
                  verify_ssl=True,
-                 max_retries_per_url=3):
+                 max_retries_per_url=2,
+                 request_timeout=12,
+                 use_browser_fallback=True,
+                 mongo_timeout_ms=2000):
         """Initialise le crawler"""
         try:
-            self.client = pymongo.MongoClient(mongo_uri)
-            self.db = self.client[db_name]
-            self.sources_collection = self.db['sources']
-            self.data_collection = self.db['crawled_data']
-            self.robots_cache = self.db['robots_cache']
-            self.url_history = self.db['url_history']
-            
-            # Index - avec gestion complète des conflits
+            self.mongo_available = False
+            self.client = pymongo.MongoClient(mongo_uri, serverSelectionTimeoutMS=mongo_timeout_ms)
             try:
-                self.data_collection.create_index([('title', 'text'), ('content', 'text')])
-            except:
-                pass
+                self.client.admin.command('ping')
+                self.mongo_available = True
+            except Exception:
+                logger.warning("⚠️ MongoDB indisponible, mode sans stockage")
             
-            try:
-                self.data_collection.create_index('source_id')
-            except:
-                pass
+            self.db = self.client[db_name] if self.mongo_available else None
+            self.sources_collection = self.db['sources'] if self.mongo_available else None
+            self.data_collection = self.db['crawled_data'] if self.mongo_available else None
+            self.robots_cache = self.db['robots_cache'] if self.mongo_available else None
+            self.url_history = self.db['url_history'] if self.mongo_available else None
             
-            try:
-                self.data_collection.create_index('timestamp')
-            except:
-                pass
-            
-            # Gestion intelligente de l'index URL
-            try:
-                # Vérifier si l'index existe déjà
-                existing_indexes = self.data_collection.index_information()
-                if 'url_1' in existing_indexes:
-                    # Si l'index existe sans unique, le supprimer et recréer
-                    current_index = existing_indexes['url_1']
-                    if not current_index.get('unique', False):
-                        logger.info("🔄 Recréation de l'index URL avec contrainte unique...")
-                        self.data_collection.drop_index('url_1')
+            if self.mongo_available:
+                # Index - avec gestion complète des conflits
+                try:
+                    self.data_collection.create_index([('title', 'text'), ('content', 'text')])
+                except:
+                    pass
+                
+                try:
+                    self.data_collection.create_index('source_id')
+                except:
+                    pass
+                
+                try:
+                    self.data_collection.create_index('timestamp')
+                except:
+                    pass
+                
+                # Gestion intelligente de l'index URL
+                try:
+                    # Vérifier si l'index existe déjà
+                    existing_indexes = self.data_collection.index_information()
+                    if 'url_1' in existing_indexes:
+                        # Si l'index existe sans unique, le supprimer et recréer
+                        current_index = existing_indexes['url_1']
+                        if not current_index.get('unique', False):
+                            logger.info("🔄 Recréation de l'index URL avec contrainte unique...")
+                            self.data_collection.drop_index('url_1')
+                            self.data_collection.create_index('url', unique=True, sparse=True, name='url_unique_idx')
+                        # Sinon l'index existe déjà correctement
+                    else:
+                        # Créer l'index
                         self.data_collection.create_index('url', unique=True, sparse=True, name='url_unique_idx')
-                    # Sinon l'index existe déjà correctement
-                else:
-                    # Créer l'index
-                    self.data_collection.create_index('url', unique=True, sparse=True, name='url_unique_idx')
-            except pymongo.errors.DuplicateKeyError:
-                logger.warning("⚠️  Doublons détectés, index URL sans contrainte unique")
+                except pymongo.errors.DuplicateKeyError:
+                    logger.warning("⚠️  Doublons détectés, index URL sans contrainte unique")
+                    try:
+                        self.data_collection.drop_index('url_1')
+                    except:
+                        pass
+                    try:
+                        self.data_collection.drop_index('url_unique_idx')
+                    except:
+                        pass
+                    self.data_collection.create_index('url', name='url_idx')
+                except Exception as e:
+                    logger.warning(f"⚠️  Index URL non créé: {e}")
+                
+                # Index pour url_history
                 try:
-                    self.data_collection.drop_index('url_1')
+                    existing_history_indexes = self.url_history.index_information()
+                    if 'url_1' not in existing_history_indexes:
+                        self.url_history.create_index('url', unique=True, sparse=True)
                 except:
                     pass
+                
                 try:
-                    self.data_collection.drop_index('url_unique_idx')
+                    self.url_history.create_index('last_crawled')
                 except:
                     pass
-                self.data_collection.create_index('url', name='url_idx')
-            except Exception as e:
-                logger.warning(f"⚠️  Index URL non créé: {e}")
-            
-            # Index pour url_history
-            try:
-                existing_history_indexes = self.url_history.index_information()
-                if 'url_1' not in existing_history_indexes:
-                    self.url_history.create_index('url', unique=True, sparse=True)
-            except:
-                pass
-            
-            try:
-                self.url_history.create_index('last_crawled')
-            except:
-                pass
             
             # Configuration
             self.use_proxy = use_proxy
@@ -371,13 +384,16 @@ class WebCrawler:
             self.respect_robots_txt = respect_robots_txt
             self.verify_ssl = verify_ssl
             self.max_retries_per_url = max_retries_per_url
+            self.request_timeout = request_timeout
+            self.use_browser_fallback = use_browser_fallback
             
             # Stratégies anti-blocage
             self.rate_limiter = AdaptiveRateLimiter()
             self.anti_blocking = AdvancedAntiBlockingStrategy()
             self.js_solver = JavaScriptChallengeSolver()
             
-            logger.info(f"✓ MongoDB: {db_name}")
+            if self.mongo_available:
+                logger.info(f"✓ MongoDB: {db_name}")
             logger.info(f"✓ Config: proxy={use_proxy}, delay={base_delay}s, SSL={verify_ssl}")
             logger.info(f"✓ Stratégies avancées activées")
         except Exception as e:
@@ -418,6 +434,8 @@ class WebCrawler:
     
     def is_url_recently_crawled(self, url, hours=24):
         """Vérifie si l'URL a été crawlée récemment"""
+        if not self.mongo_available:
+            return False
         recent = self.url_history.find_one({
             'url': url,
             'last_crawled': {'$gte': datetime.now() - timedelta(hours=hours)}
@@ -426,6 +444,8 @@ class WebCrawler:
     
     def mark_url_crawled(self, url, success=True):
         """Marque une URL comme crawlée"""
+        if not self.mongo_available:
+            return
         self.url_history.update_one(
             {'url': url},
             {
@@ -488,13 +508,43 @@ class WebCrawler:
             logger.error(f"Erreur suppression: {e}")
             return False
     
-    def crawl_url(self, url, content_types, max_hits=100, control=None, stats_cb=None, keywords=None):
+    def crawl_url(self, url, content_types, max_hits=100, control=None, stats_cb=None, keywords=None, skip_recent=True, prefer_browser=False):
         """Crawl avec stratégies anti-blocage avancées"""
         normalized_types = [ct.lower().strip() for ct in (content_types or [])]
         if "rss" in normalized_types and "xml" not in normalized_types:
             normalized_types.append("xml")
         content_types = normalized_types or ["html"]
         keywords = [k.strip().lower() for k in (keywords or []) if k.strip()]
+        browser_fetcher = None
+        first_fetch = True
+
+        def try_browser_fetch(target_url):
+            nonlocal browser_fetcher
+            if not self.use_browser_fallback:
+                return None
+            if browser_fetcher is None:
+                from crawler.browser_fetcher import BrowserFetcher
+                browser_fetcher = BrowserFetcher()
+            if stats_cb:
+                stats_cb("error", {"url": target_url, "error": "Using browser fallback"})
+            return browser_fetcher.fetch(target_url, timeout_sec=self.request_timeout)
+
+        def extract_links(html_bytes, current_url):
+            try:
+                soup = BeautifulSoup(html_bytes, 'html.parser')
+                links_found = 0
+                for link in soup.find_all('a', href=True):
+                    absolute_url = urljoin(current_url, link['href'])
+                    clean_url = self.anti_blocking.normalize_url(absolute_url)
+                    if self._is_same_domain(url, clean_url):
+                        if clean_url not in visited_urls and clean_url not in [f[0] for f in failed_urls]:
+                            if clean_url not in urls_to_visit:
+                                urls_to_visit.append(clean_url)
+                                links_found += 1
+                if links_found > 0:
+                    logger.info(f"   → {links_found} nouveaux liens")
+            except Exception:
+                pass
         def should_stop():
             if control is None:
                 return False
@@ -561,12 +611,34 @@ class WebCrawler:
                 continue
             
             # Éviter de re-crawler trop vite
-            if self.is_url_recently_crawled(normalized_url, hours=1):
+            if skip_recent and self.is_url_recently_crawled(normalized_url, hours=1):
                 logger.debug(f"Déjà crawlé récemment: {current_url}")
+                if stats_cb:
+                    stats_cb("error", {"url": current_url, "error": "Recently crawled (1h)"})
                 continue
             
             visited_urls.add(normalized_url)
             
+            # Optionnel: navigateur en premier sur le tout premier fetch
+            if prefer_browser and first_fetch:
+                fallback = try_browser_fetch(current_url)
+                first_fetch = False
+                if fallback:
+                    html, final_url, method = fallback
+                    data = self._process_html(final_url, html)
+                    if data and self._is_relevant(data, keywords):
+                        collected_data.append(data)
+                        self.mark_url_crawled(normalized_url, success=True)
+                        if len(collected_data) < max_hits:
+                            extract_links(html, final_url)
+                        if stats_cb:
+                            stats_cb("success", {"url": current_url, "content_type": "html", "method": method})
+                        continue
+                    elif data and stats_cb:
+                        if len(collected_data) < max_hits:
+                            extract_links(html, final_url)
+                        stats_cb("error", {"url": current_url, "error": "Filtered by keywords"})
+
             # Rate limiting adaptatif
             is_retry = normalized_url in failed_urls
             delay = self.anti_blocking.calculate_intelligent_delay(
@@ -588,16 +660,46 @@ class WebCrawler:
                 response = session.get(
                     current_url,
                     headers=headers,
-                    timeout=30,
+                    timeout=self.request_timeout,
                     allow_redirects=True
                 )
+
+                # Détecter challenge JS même avec status 200
+                if self.use_browser_fallback and self.js_solver.detect_challenge(response):
+                    try:
+                        soup = BeautifulSoup(response.content, 'html.parser')
+                        link_count = len(soup.find_all('a', href=True))
+                    except Exception:
+                        link_count = 0
+
+                    if link_count < 5:
+                        fallback = try_browser_fetch(current_url)
+                        if fallback:
+                            html, final_url, method = fallback
+                            data = self._process_html(final_url, html)
+                            if data and self._is_relevant(data, keywords):
+                                collected_data.append(data)
+                                self.mark_url_crawled(normalized_url, success=True)
+                                if len(collected_data) < max_hits:
+                                    extract_links(html, final_url)
+                                if stats_cb:
+                                    stats_cb("success", {"url": current_url, "content_type": "html", "method": method})
+                                continue
+                            elif data and stats_cb:
+                                if len(collected_data) < max_hits:
+                                    extract_links(html, final_url)
+                                stats_cb("error", {"url": current_url, "error": "Filtered by keywords"})
                 
                 # Gestion des codes d'erreur
                 if response.status_code == 429:
                     logger.warning(f"⏱️  429 Rate Limited: {current_url}")
                     self.rate_limiter.report_429(domain)
                     retry_after = int(response.headers.get('Retry-After', 60))
+                    if control is not None:
+                        retry_after = min(retry_after, 10)
                     logger.info(f"Attente de {retry_after}s...")
+                    if stats_cb:
+                        stats_cb("error", {"url": current_url, "error": f"Rate limited (retry {retry_after}s)"})
                     time.sleep(retry_after)
                     urls_to_visit.insert(0, current_url)
                     visited_urls.remove(normalized_url)
@@ -612,6 +714,24 @@ class WebCrawler:
                         for msg in self.js_solver.suggest_solutions():
                             logger.info(msg)
                     
+                    if self.use_browser_fallback:
+                        fallback = try_browser_fetch(current_url)
+                        if fallback:
+                            html, final_url, method = fallback
+                            data = self._process_html(final_url, html)
+                            if data and self._is_relevant(data, keywords):
+                                collected_data.append(data)
+                                self.mark_url_crawled(normalized_url, success=True)
+                                if len(collected_data) < max_hits:
+                                    extract_links(html, final_url)
+                                if stats_cb:
+                                    stats_cb("success", {"url": current_url, "content_type": "html", "method": method})
+                                continue
+                            elif data and stats_cb:
+                                if len(collected_data) < max_hits:
+                                    extract_links(html, final_url)
+                                stats_cb("error", {"url": current_url, "error": "Filtered by keywords"})
+
                     failed_urls[normalized_url] = (
                         failed_urls.get(normalized_url, (0, ""))[0] + 1,
                         f"HTTP {response.status_code}"
@@ -642,20 +762,7 @@ class WebCrawler:
                         
                         # Extraire liens si besoin
                         if len(collected_data) < max_hits:
-                            soup = BeautifulSoup(response.content, 'html.parser')
-                            links_found = 0
-                            for link in soup.find_all('a', href=True):
-                                absolute_url = urljoin(current_url, link['href'])
-                                clean_url = self.anti_blocking.normalize_url(absolute_url)
-                                
-                                if self._is_same_domain(url, clean_url):
-                                    if clean_url not in visited_urls and clean_url not in [f[0] for f in failed_urls]:
-                                        if clean_url not in urls_to_visit:
-                                            urls_to_visit.append(clean_url)
-                                            links_found += 1
-                            
-                            if links_found > 0:
-                                logger.info(f"   → {links_found} nouveaux liens")
+                            extract_links(response.content, current_url)
                         
                         last_referer = current_url
                 
@@ -691,6 +798,23 @@ class WebCrawler:
                 
             except requests.exceptions.Timeout:
                 logger.warning(f"⏱️  Timeout: {current_url}")
+                if self.use_browser_fallback:
+                    fallback = try_browser_fetch(current_url)
+                    if fallback:
+                        html, final_url, method = fallback
+                        data = self._process_html(final_url, html)
+                        if data and self._is_relevant(data, keywords):
+                            collected_data.append(data)
+                            self.mark_url_crawled(normalized_url, success=True)
+                            if len(collected_data) < max_hits:
+                                extract_links(html, final_url)
+                            if stats_cb:
+                                stats_cb("success", {"url": current_url, "content_type": "html", "method": method})
+                            continue
+                        elif data and stats_cb:
+                            if len(collected_data) < max_hits:
+                                extract_links(html, final_url)
+                            stats_cb("error", {"url": current_url, "error": "Filtered by keywords"})
                 failed_urls[normalized_url] = (
                     failed_urls.get(normalized_url, (0, ""))[0] + 1,
                     "Timeout"
@@ -700,6 +824,23 @@ class WebCrawler:
                 
             except requests.exceptions.ConnectionError as e:
                 logger.warning(f"🔌 Erreur connexion: {current_url}")
+                if self.use_browser_fallback:
+                    fallback = try_browser_fetch(current_url)
+                    if fallback:
+                        html, final_url, method = fallback
+                        data = self._process_html(final_url, html)
+                        if data and self._is_relevant(data, keywords):
+                            collected_data.append(data)
+                            self.mark_url_crawled(normalized_url, success=True)
+                            if len(collected_data) < max_hits:
+                                extract_links(html, final_url)
+                            if stats_cb:
+                                stats_cb("success", {"url": current_url, "content_type": "html", "method": method})
+                            continue
+                        elif data and stats_cb:
+                            if len(collected_data) < max_hits:
+                                extract_links(html, final_url)
+                            stats_cb("error", {"url": current_url, "error": "Filtered by keywords"})
                 failed_urls[normalized_url] = (
                     failed_urls.get(normalized_url, (0, ""))[0] + 1,
                     "Connection Error"
@@ -733,7 +874,13 @@ class WebCrawler:
     
     def _is_same_domain(self, base_url, check_url):
         """Vérifie si même domaine"""
-        return urlparse(base_url).netloc == urlparse(check_url).netloc
+        base = urlparse(base_url).netloc.lower()
+        check = urlparse(check_url).netloc.lower()
+        base = base.replace("www.", "")
+        check = check.replace("www.", "")
+        if base == check:
+            return True
+        return check.endswith("." + base) or base.endswith("." + check)
     
     def _process_html(self, url, content):
         """Traite HTML"""

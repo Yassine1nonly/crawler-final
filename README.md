@@ -14,3 +14,4 @@ Interface web locale:
 Notes:
 - MongoDB doit etre demarre pour le crawling et le stockage.
 - Filtrage par mots-cles: renseignez des keywords (ex: finance, education) pour ne stocker que le contenu pertinent.
+- Pour les sites difficiles (Cloudflare/JS): installez Playwright et ses navigateurs `pip install playwright` puis `playwright install`. Selenium est aussi supporte si Chrome est installe.

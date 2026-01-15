@@ -105,6 +105,17 @@ class CrawlerManager:
         self._set_status(job_id, "stopping")
         return True
 
+    def delete(self, job_id: str) -> bool:
+        job = self._jobs.get(job_id)
+        if not job:
+            return False
+        job["control"].stop_event.set()
+        job["control"].pause_event.set()
+        with self._lock:
+            self._jobs.pop(job_id, None)
+        self._publish({"type": "job_deleted", "job_id": job_id})
+        return True
+
     def list_stats(self) -> List[Dict]:
         with self._lock:
             return [job["stats"].to_dict() for job in self._jobs.values()]
@@ -138,7 +149,7 @@ class CrawlerManager:
         self._publish({"type": "stats", "jobs": [stats]})
 
     def _run_job(self, job_id: str, url: str, max_pages: int, content_types: List[str], keywords: List[str], control: CrawlerControl) -> None:
-        crawler = WebCrawler()
+        crawler = WebCrawler(base_delay=0.5, max_retries_per_url=2, request_timeout=12)
 
         def stats_cb(event: str, payload: Dict) -> None:
             self._handle_event(job_id, event, payload)
@@ -149,18 +160,23 @@ class CrawlerManager:
                 content_types=content_types,
                 max_hits=max_pages,
                 keywords=keywords,
+                skip_recent=False,
+                prefer_browser=False,
                 control=control,
                 stats_cb=stats_cb,
             )
             stored = 0
-            for item in results:
-                item["source_id"] = job_id
-                item["keywords_filter"] = keywords
-                try:
-                    crawler.data_collection.insert_one(item)
-                    stored += 1
-                except Exception:
-                    pass
+            if not crawler.mongo_available:
+                self._handle_event(job_id, "error", {"url": url, "error": "MongoDB unavailable"})
+            else:
+                for item in results:
+                    item["source_id"] = job_id
+                    item["keywords_filter"] = keywords
+                    try:
+                        crawler.data_collection.insert_one(item)
+                        stored += 1
+                    except Exception:
+                        pass
         except Exception as exc:
             self._handle_event(job_id, "error", {"url": url, "error": str(exc)})
             self._set_status(job_id, "error")
