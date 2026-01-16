@@ -13,6 +13,7 @@ from urllib.parse import urljoin, urlparse, parse_qs, urlencode
 import random
 import hashlib
 import json
+import re
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from collections import defaultdict
@@ -399,6 +400,278 @@ class WebCrawler:
         except Exception as e:
             logger.error(f"Erreur MongoDB: {e}")
             raise
+
+    @staticmethod
+    def _expand_keywords(keywords):
+        expanded = set(keywords)
+        for kw in list(expanded):
+            if kw == "education":
+                expanded.update([
+                    "educational",
+                    "school",
+                    "schools",
+                    "student",
+                    "students",
+                    "teacher",
+                    "teachers",
+                    "university",
+                    "universities",
+                    "college",
+                    "campus",
+                    "classroom",
+                    "curriculum",
+                    "exam",
+                    "exams",
+                    "scholarship",
+                    "education ministry",
+                    "ministry of education",
+                    "education system",
+                    "enseignement",
+                    "ecole",
+                    "ecoles",
+                    "universite",
+                    "universites",
+                    "etudiant",
+                    "etudiants",
+                    "professeur",
+                    "professeurs",
+                    "formation",
+                    "scolarite",
+                    "lycee",
+                    "bac",
+                    "baccalaureat",
+                    "التعليم",
+                    "مدرسة",
+                    "مدارس",
+                    "جامعة",
+                    "جامعات",
+                    "طالب",
+                    "طلاب",
+                    "تلميذ",
+                    "تلاميذ",
+                    "أستاذ",
+                    "أساتذة",
+                    "امتحان",
+                    "امتحانات",
+                    "وزارة التربية",
+                    "التعليم العالي",
+                ])
+            elif kw == "finance":
+                expanded.update([
+                    "financial",
+                    "economy",
+                    "economic",
+                    "bank",
+                    "banks",
+                    "banking",
+                    "investment",
+                    "investments",
+                    "stock",
+                    "stocks",
+                    "market",
+                    "markets",
+                    "bond",
+                    "bonds",
+                    "inflation",
+                    "budget",
+                    "tax",
+                    "taxes",
+                    "loan",
+                    "loans",
+                    "credit",
+                    "currency",
+                    "currencies",
+                    "fund",
+                    "funds",
+                    "finance ministry",
+                    "ministry of finance",
+                    "économie",
+                    "économique",
+                    "banque",
+                    "banques",
+                    "bourse",
+                    "marché",
+                    "marchés",
+                    "investissement",
+                    "investissements",
+                    "inflation",
+                    "budget",
+                    "impôt",
+                    "impôts",
+                    "crédit",
+                    "monnaie",
+                    "finances",
+                    "تمويل",
+                    "مالي",
+                    "مالية",
+                    "اقتصاد",
+                    "اقتصادي",
+                    "بنك",
+                    "بنوك",
+                    "استثمار",
+                    "استثمارات",
+                    "بورصة",
+                    "سوق",
+                    "أسواق",
+                    "تضخم",
+                    "ميزانية",
+                    "ضرائب",
+                    "قرض",
+                    "قروض",
+                    "وزارة المالية",
+                ])
+            elif kw == "health":
+                expanded.update([
+                    "healthcare",
+                    "medical",
+                    "medicine",
+                    "doctor",
+                    "doctors",
+                    "hospital",
+                    "hospitals",
+                    "clinic",
+                    "clinics",
+                    "patient",
+                    "patients",
+                    "public health",
+                    "vaccine",
+                    "vaccines",
+                    "epidemic",
+                    "pandemic",
+                    "disease",
+                    "diseases",
+                    "treatment",
+                    "pharmacy",
+                    "pharmacies",
+                    "ministry of health",
+                    "santé",
+                    "sanitaire",
+                    "médical",
+                    "médecine",
+                    "hôpital",
+                    "hôpitaux",
+                    "clinique",
+                    "cliniques",
+                    "patient",
+                    "patients",
+                    "vaccin",
+                    "vaccins",
+                    "épidémie",
+                    "pandémie",
+                    "maladie",
+                    "maladies",
+                    "traitement",
+                    "pharmacie",
+                    "pharmacies",
+                    "وزارة الصحة",
+                    "صحة",
+                    "صحي",
+                    "طبيب",
+                    "أطباء",
+                    "مستشفى",
+                    "مستشفيات",
+                    "عيادة",
+                    "عيادات",
+                    "مريض",
+                    "مرضى",
+                    "لقاح",
+                    "لقاحات",
+                    "وباء",
+                    "جائحة",
+                    "مرض",
+                    "أمراض",
+                    "علاج",
+                    "صيدلية",
+                    "صيدليات",
+                ])
+        return list(expanded)
+
+    @staticmethod
+    def _normalize_text(text):
+        text = (text or "").lower()
+        text = WebCrawler._normalize_arabic(text)
+        return " ".join(text.split())
+
+    @staticmethod
+    def _normalize_arabic(text):
+        if not text:
+            return ""
+        # Normalize common Arabic letter variants and strip diacritics
+        replacements = {
+            "أ": "ا",
+            "إ": "ا",
+            "آ": "ا",
+            "ى": "ي",
+            "ؤ": "و",
+            "ئ": "ي",
+            "ة": "ه",
+            "ٱ": "ا",
+        }
+        for src, dst in replacements.items():
+            text = text.replace(src, dst)
+        text = re.sub(r"[\u064B-\u065F\u0670\u06D6-\u06ED]", "", text)
+        return text
+
+    @staticmethod
+    def _keyword_in_text(text, keyword):
+        if not text or not keyword:
+            return False
+        text = WebCrawler._normalize_text(text)
+        keyword = WebCrawler._normalize_text(keyword)
+        if " " in keyword:
+            return keyword in text
+        pattern = r"(?<!\\w)" + re.escape(keyword) + r"(?!\\w)"
+        return re.search(pattern, text, flags=re.UNICODE) is not None
+
+    def _link_is_relevant(self, link_text, link_url, keywords):
+        if not keywords:
+            return True
+        haystack = f"{link_text} {link_url}"
+        return any(self._keyword_in_text(haystack, kw) for kw in keywords)
+
+    @staticmethod
+    def _looks_like_listing(url):
+        try:
+            path = urlparse(url).path or "/"
+        except Exception:
+            return False
+        if path in ["", "/"]:
+            return True
+        if path.endswith("/"):
+            return True
+        last_segment = path.rsplit("/", 1)[-1]
+        return "." not in last_segment
+
+    def _extract_main_text(self, soup):
+        candidates = []
+        for tag in ["article", "main"]:
+            node = soup.find(tag)
+            if node:
+                text = node.get_text(separator=" ", strip=True)
+                if len(text) >= 200:
+                    return text
+                candidates.append(text)
+
+        for selector in [
+            ".post-content",
+            ".article-content",
+            ".entry-content",
+            ".post",
+            ".content",
+            "#content",
+            ".single-content",
+            ".story",
+        ]:
+            node = soup.select_one(selector)
+            if node:
+                text = node.get_text(separator=" ", strip=True)
+                if len(text) >= 200:
+                    return text
+                candidates.append(text)
+
+        if candidates:
+            return max(candidates, key=len)
+        return soup.get_text(separator=" ", strip=True)
     
     def check_robots_txt(self, url):
         """Vérifie robots.txt"""
@@ -515,6 +788,7 @@ class WebCrawler:
             normalized_types.append("xml")
         content_types = normalized_types or ["html"]
         keywords = [k.strip().lower() for k in (keywords or []) if k.strip()]
+        keywords = self._expand_keywords(keywords)
         browser_fetcher = None
         first_fetch = True
 
@@ -529,22 +803,38 @@ class WebCrawler:
                 stats_cb("error", {"url": target_url, "error": "Using browser fallback"})
             return browser_fetcher.fetch(target_url, timeout_sec=self.request_timeout)
 
-        def extract_links(html_bytes, current_url):
+        def extract_links(html_bytes, current_url, depth):
             try:
                 soup = BeautifulSoup(html_bytes, 'html.parser')
                 links_found = 0
+                allow_first_hop = depth == 0
+                listing_candidates = []
                 for link in soup.find_all('a', href=True):
                     absolute_url = urljoin(current_url, link['href'])
                     clean_url = self.anti_blocking.normalize_url(absolute_url)
+                    link_text = link.get_text(separator=" ", strip=True)
+                    if keywords and not allow_first_hop:
+                        if not self._link_is_relevant(link_text, clean_url, keywords):
+                            continue
+                    elif keywords and allow_first_hop:
+                        if self._looks_like_listing(clean_url):
+                            listing_candidates.append(clean_url)
                     if self._is_same_domain(url, clean_url):
                         if clean_url not in visited_urls and clean_url not in [f[0] for f in failed_urls]:
-                            if clean_url not in urls_to_visit:
-                                urls_to_visit.append(clean_url)
+                            if clean_url not in [u for u, _ in urls_to_visit]:
+                                urls_to_visit.append((clean_url, depth + 1))
+                                links_found += 1
+                if keywords and allow_first_hop and links_found == 0:
+                    for candidate in listing_candidates[:10]:
+                        if candidate not in visited_urls and candidate not in [f[0] for f in failed_urls]:
+                            if candidate not in [u for u, _ in urls_to_visit]:
+                                urls_to_visit.append((candidate, depth + 1))
                                 links_found += 1
                 if links_found > 0:
-                    logger.info(f"   → {links_found} nouveaux liens")
+                    logger.info(f"   ?+' {links_found} nouveaux liens")
             except Exception:
                 pass
+        
         def should_stop():
             if control is None:
                 return False
@@ -567,7 +857,7 @@ class WebCrawler:
 
         collected_data = []
         visited_urls = set()
-        urls_to_visit = [url]
+        urls_to_visit = [(url, 0)]
         failed_urls = {}  # URL -> (retry_count, last_error)
         
         session = self.anti_blocking.create_advanced_session(
@@ -586,7 +876,7 @@ class WebCrawler:
 
             wait_if_paused()
 
-            current_url = urls_to_visit.pop(0)
+            current_url, depth = urls_to_visit.pop(0)
             normalized_url = self.anti_blocking.normalize_url(current_url)
 
             if stats_cb:
@@ -630,13 +920,13 @@ class WebCrawler:
                         collected_data.append(data)
                         self.mark_url_crawled(normalized_url, success=True)
                         if len(collected_data) < max_hits:
-                            extract_links(html, final_url)
+                            extract_links(html, final_url, depth)
                         if stats_cb:
                             stats_cb("success", {"url": current_url, "content_type": "html", "method": method})
                         continue
                     elif data and stats_cb:
                         if len(collected_data) < max_hits:
-                            extract_links(html, final_url)
+                            extract_links(html, final_url, depth)
                         stats_cb("error", {"url": current_url, "error": "Filtered by keywords"})
 
             # Rate limiting adaptatif
@@ -681,13 +971,13 @@ class WebCrawler:
                                 collected_data.append(data)
                                 self.mark_url_crawled(normalized_url, success=True)
                                 if len(collected_data) < max_hits:
-                                    extract_links(html, final_url)
+                                    extract_links(html, final_url, depth)
                                 if stats_cb:
                                     stats_cb("success", {"url": current_url, "content_type": "html", "method": method})
                                 continue
                             elif data and stats_cb:
                                 if len(collected_data) < max_hits:
-                                    extract_links(html, final_url)
+                                    extract_links(html, final_url, depth)
                                 stats_cb("error", {"url": current_url, "error": "Filtered by keywords"})
                 
                 # Gestion des codes d'erreur
@@ -701,7 +991,7 @@ class WebCrawler:
                     if stats_cb:
                         stats_cb("error", {"url": current_url, "error": f"Rate limited (retry {retry_after}s)"})
                     time.sleep(retry_after)
-                    urls_to_visit.insert(0, current_url)
+                    urls_to_visit.insert(0, (current_url, depth))
                     visited_urls.remove(normalized_url)
                     continue
                 
@@ -723,13 +1013,13 @@ class WebCrawler:
                                 collected_data.append(data)
                                 self.mark_url_crawled(normalized_url, success=True)
                                 if len(collected_data) < max_hits:
-                                    extract_links(html, final_url)
+                                    extract_links(html, final_url, depth)
                                 if stats_cb:
                                     stats_cb("success", {"url": current_url, "content_type": "html", "method": method})
                                 continue
                             elif data and stats_cb:
                                 if len(collected_data) < max_hits:
-                                    extract_links(html, final_url)
+                                    extract_links(html, final_url, depth)
                                 stats_cb("error", {"url": current_url, "error": "Filtered by keywords"})
 
                     failed_urls[normalized_url] = (
@@ -758,35 +1048,35 @@ class WebCrawler:
                 if 'html' in content_type and 'html' in content_types:
                     data = self._process_html(current_url, response.content)
                     if data:
-                        logger.info(f"✅ Collecté: {data['title'][:60]}")
+                        logger.info(f"Fetched: {data['title'][:60]}")
                         
                         # Extraire liens si besoin
                         if len(collected_data) < max_hits:
-                            extract_links(response.content, current_url)
+                            extract_links(response.content, current_url, depth)
                         
                         last_referer = current_url
                 
                 elif 'xml' in content_type and 'xml' in content_types:
                     data = self._process_xml(current_url, response.content)
                     if data:
-                        logger.info(f"✅ XML collecté: {data['title'][:60]}")
+                        logger.info(f"Fetched XML: {data['title'][:60]}")
                 
                 elif 'pdf' in content_type and 'pdf' in content_types:
                     data = self._process_pdf(current_url, response.content)
                     if data:
-                        logger.info(f"✅ PDF collecté: {data['title'][:60]}")
+                        logger.info(f"Fetched PDF: {data['title'][:60]}")
                 
                 elif 'text' in content_type and 'text' in content_types:
                     data = self._process_text(current_url, response.text)
                     if data:
-                        logger.info(f"✅ Texte collecté: {data['title'][:60]}")
+                        logger.info(f"Fetched text: {data['title'][:60]}")
                 
                 else:
                     # Essayer HTML par défaut
                     if 'html' in content_types:
                         data = self._process_html(current_url, response.content)
                         if data:
-                            logger.info(f"✅ Page collectée: {data['title'][:60]}")
+                            logger.info(f"Fetched page: {data['title'][:60]}")
                 
                 if data and self._is_relevant(data, keywords):
                     collected_data.append(data)
@@ -807,13 +1097,13 @@ class WebCrawler:
                             collected_data.append(data)
                             self.mark_url_crawled(normalized_url, success=True)
                             if len(collected_data) < max_hits:
-                                extract_links(html, final_url)
+                                extract_links(html, final_url, depth)
                             if stats_cb:
                                 stats_cb("success", {"url": current_url, "content_type": "html", "method": method})
                             continue
                         elif data and stats_cb:
                             if len(collected_data) < max_hits:
-                                extract_links(html, final_url)
+                                extract_links(html, final_url, depth)
                             stats_cb("error", {"url": current_url, "error": "Filtered by keywords"})
                 failed_urls[normalized_url] = (
                     failed_urls.get(normalized_url, (0, ""))[0] + 1,
@@ -833,13 +1123,13 @@ class WebCrawler:
                             collected_data.append(data)
                             self.mark_url_crawled(normalized_url, success=True)
                             if len(collected_data) < max_hits:
-                                extract_links(html, final_url)
+                                extract_links(html, final_url, depth)
                             if stats_cb:
                                 stats_cb("success", {"url": current_url, "content_type": "html", "method": method})
                             continue
                         elif data and stats_cb:
                             if len(collected_data) < max_hits:
-                                extract_links(html, final_url)
+                                extract_links(html, final_url, depth)
                             stats_cb("error", {"url": current_url, "error": "Filtered by keywords"})
                 failed_urls[normalized_url] = (
                     failed_urls.get(normalized_url, (0, ""))[0] + 1,
@@ -887,13 +1177,13 @@ class WebCrawler:
         try:
             soup = BeautifulSoup(content, 'html.parser')
             
-            for script in soup(['script', 'style', 'nav', 'footer', 'aside']):
+            for script in soup(['script', 'style', 'nav', 'footer', 'aside', 'header']):
                 script.decompose()
             
             title = soup.title.string if soup.title else 'Sans titre'
             title = title.strip()[:200]
             
-            text_content = soup.get_text(separator=' ', strip=True)
+            text_content = self._extract_main_text(soup)
             
             keywords = []
             meta_keywords = soup.find('meta', attrs={'name': 'keywords'})
@@ -985,14 +1275,100 @@ class WebCrawler:
         if not keywords:
             return True
 
-        haystack = " ".join([
-            str(data.get('title', '')),
-            str(data.get('description', '')),
-            str(data.get('content', '')),
-            " ".join(data.get('keywords', []) or []),
-        ]).lower()
+        title = str(data.get('title', ''))
+        description = str(data.get('description', ''))
+        content = str(data.get('content', ''))
+        url = str(data.get('url', ''))
+        meta_keywords = " ".join(data.get('keywords', []) or [])
 
-        return any(keyword in haystack for keyword in keywords)
+        strict_finance = "finance" in keywords
+        strict_health = "health" in keywords
+        strict_mode = strict_finance or strict_health
+
+        finance_terms = {
+            "finance", "financial", "economy", "economic", "bank", "banks", "banking",
+            "investment", "investments", "stock", "stocks", "market", "markets",
+            "bond", "bonds", "inflation", "budget", "tax", "taxes", "loan", "loans",
+            "credit", "currency", "currencies", "fund", "funds", "finance ministry",
+            "ministry of finance", "économie", "économique", "banque", "banques",
+            "bourse", "marché", "marchés", "investissement", "investissements",
+            "impôt", "impôts", "crédit", "monnaie", "finances", "تمويل", "مالي",
+            "مالية", "اقتصاد", "اقتصادي", "بنك", "بنوك", "استثمار", "استثمارات",
+            "بورصة", "سوق", "أسواق", "تضخم", "ميزانية", "ضرائب", "قرض", "قروض",
+            "وزارة المالية",
+        }
+        health_terms = {
+            "health", "healthcare", "medical", "medicine", "doctor", "doctors",
+            "hospital", "hospitals", "clinic", "clinics", "patient", "patients",
+            "public health", "vaccine", "vaccines", "epidemic", "pandemic",
+            "disease", "diseases", "treatment", "pharmacy", "pharmacies",
+            "ministry of health", "santé", "sanitaire", "médical", "médecine",
+            "hôpital", "hôpitaux", "clinique", "cliniques", "vaccin", "vaccins",
+            "épidémie", "pandémie", "maladie", "maladies", "traitement",
+            "pharmacie", "pharmacies", "وزارة الصحة", "صحة", "صحي", "طبيب",
+            "أطباء", "مستشفى", "مستشفيات", "عيادة", "عيادات", "مريض", "مرضى",
+            "لقاح", "لقاحات", "وباء", "جائحة", "مرض", "أمراض", "علاج",
+            "صيدلية", "صيدليات",
+        }
+        precision_terms = set()
+        if strict_finance:
+            precision_terms.update(finance_terms)
+        if strict_health:
+            precision_terms.update(health_terms)
+
+        title_match = any(self._keyword_in_text(title, kw) for kw in keywords)
+        description_match = any(self._keyword_in_text(description, kw) for kw in keywords)
+        url_match = any(self._keyword_in_text(url, kw) for kw in keywords)
+        meta_match = any(self._keyword_in_text(meta_keywords, kw) for kw in keywords)
+
+        if title_match or description_match or url_match or meta_match:
+            if not strict_mode:
+                return True
+            high_precision = any(
+                self._keyword_in_text(title, kw)
+                or self._keyword_in_text(description, kw)
+                or self._keyword_in_text(url, kw)
+                or self._keyword_in_text(meta_keywords, kw)
+                for kw in precision_terms
+            )
+            if high_precision:
+                return True
+        elif strict_mode:
+            high_precision = any(
+                self._keyword_in_text(title, kw)
+                or self._keyword_in_text(description, kw)
+                or self._keyword_in_text(url, kw)
+                or self._keyword_in_text(meta_keywords, kw)
+                for kw in precision_terms
+            )
+            if not high_precision:
+                return False
+
+        if self._looks_like_listing(url):
+            return False
+
+        normalized_content = self._normalize_text(content)
+        if len(normalized_content) < 300:
+            return False
+
+        content_matches = {kw for kw in keywords if self._keyword_in_text(normalized_content, kw)}
+        if not content_matches:
+            return False
+
+        if strict_mode:
+            precision_hits = {kw for kw in precision_terms if self._keyword_in_text(normalized_content, kw)}
+            return len(content_matches) >= 2 and len(precision_hits) >= 1
+
+        content_hits = 0
+        for kw in content_matches:
+            if " " in kw:
+                if kw in normalized_content:
+                    content_hits += 2
+            else:
+                matches = re.findall(r"(?<!\\w)" + re.escape(kw) + r"(?!\\w)", normalized_content, flags=re.UNICODE)
+                content_hits += min(len(matches), 3)
+
+        return content_hits >= 3
     
     def crawl_source(self, source_id):
         """Crawl une source"""
