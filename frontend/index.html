@@ -87,8 +87,133 @@
           <div class="jobs" id="jobsList"></div>
         </section>
       </main>
+
+      <section class="panel full">
+        <div class="panel-head">
+          <div>
+            <div class="eyebrow">LLM Reporting</div>
+            <h2>Insight Dashboard</h2>
+            <p class="lead small">
+              Review the latest crawl output, explore distributions, and ask the LLM for an executive-ready briefing.
+            </p>
+          </div>
+          <div class="report-actions">
+            <label class="inline">
+              Session
+              <select id="sessionSelect"></select>
+            </label>
+            <button class="ghost" id="refreshSessions" type="button">Refresh data</button>
+          </div>
+        </div>
+
+        <div class="report-grid">
+          <div class="report-pane">
+            <div class="pill" id="sessionMeta">Loading dataset…</div>
+            <div class="mini-grid" id="contentTypeList"></div>
+
+            <div class="mini-grid two-col">
+              <div>
+                <div class="section-head">
+                  <h4>Top domains</h4>
+                  <span class="muted" id="domainCount"></span>
+                </div>
+                <div id="domainList" class="chips-list"></div>
+              </div>
+              <div>
+                <div class="section-head">
+                  <h4>Topics</h4>
+                  <span class="muted" id="keywordCount"></span>
+                </div>
+                <div id="keywordList" class="chips-list"></div>
+              </div>
+            </div>
+
+            <div class="gqm-block">
+              <div class="section-head">
+                <h4>GQM Report</h4>
+                <span class="muted">Goals · Questions · Metrics</span>
+              </div>
+              <div id="gqmPanel" class="gqm-grid"></div>
+            </div>
+
+            <div class="gqm-block">
+              <div class="section-head">
+                <h4>Page Insights</h4>
+                <span class="muted">Charts extracted from a single webpage</span>
+              </div>
+              <div class="page-controls">
+                <label class="inline">
+                  Article
+                  <select id="pageSelect"></select>
+                </label>
+                <button class="ghost" id="analyzePage" type="button">Analyze page</button>
+              </div>
+              <div id="pageSummary" class="page-summary muted">Select an article to analyze.</div>
+              <div id="pageInsights" class="insight-list"></div>
+              <div id="pageCharts" class="chart-stack"></div>
+            </div>
+
+            <div class="mini-grid two-col">
+              <div>
+                <div class="section-head">
+                  <h4>Content mix</h4>
+                  <span class="muted">Pie</span>
+                </div>
+                <div id="contentTypeChart" class="chart-box"></div>
+              </div>
+              <div>
+                <div class="section-head">
+                  <h4>Top domains</h4>
+                  <span class="muted">Bar</span>
+                </div>
+                <div id="domainChart" class="chart-box"></div>
+              </div>
+            </div>
+
+            <div class="mini-grid two-col">
+              <div>
+                <div class="section-head">
+                  <h4>Topic frequency</h4>
+                  <span class="muted">Bar</span>
+                </div>
+                <div id="keywordChart" class="chart-box"></div>
+              </div>
+              <div>
+                <div class="section-head">
+                  <h4>Latest items per hour</h4>
+                  <span class="muted">Histogram</span>
+                </div>
+                <div id="timeChart" class="chart-box"></div>
+              </div>
+            </div>
+
+            <div>
+              <div class="section-head">
+                <h4>Latest items</h4>
+                <span class="muted" id="latestCount"></span>
+              </div>
+              <div id="latestItems" class="timeline"></div>
+            </div>
+          </div>
+
+          <div class="report-pane">
+            <div class="llm-box">
+              <label class="full">
+                Guidance to the LLM
+                <textarea
+                  id="reportInstructions"
+                  placeholder="Ask for angles to highlight: personas, risk, compliance, competitive moves, or new crawl filters."
+                ></textarea>
+              </label>
+              <button class="primary full" id="generateReport" type="button">Generate LLM report</button>
+              <div class="report-output" id="reportOutput">Waiting for dataset…</div>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

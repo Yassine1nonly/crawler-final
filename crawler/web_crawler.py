@@ -17,6 +17,7 @@ import re
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from collections import defaultdict
+from config.settings import MONGODB_URI, DATABASE_NAME
 
 logging.basicConfig(
     level=logging.INFO,
@@ -294,8 +295,8 @@ class JavaScriptChallengeSolver:
 class WebCrawler:
     """Crawler web avec stratégies anti-blocage avancées"""
     
-    def __init__(self, mongo_uri="mongodb://localhost:27017/", 
-                 db_name="web_crawler_db",
+    def __init__(self, mongo_uri=MONGODB_URI, 
+                 db_name=DATABASE_NAME,
                  use_proxy=False,
                  base_delay=0.2,
                  respect_robots_txt=False,

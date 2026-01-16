@@ -9,11 +9,13 @@ if BASE_DIR not in sys.path:
 from flask import Flask, Response, jsonify, request
 
 from server.manager import CrawlerManager
+from server.reporting import ReportingService
 
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path="")
 manager = CrawlerManager()
+reporting = ReportingService()
 
 
 @app.route("/")
@@ -113,6 +115,50 @@ def stream():
         "X-Accel-Buffering": "no",
     }
     return Response(event_stream(), headers=headers, mimetype="text/event-stream")
+
+
+@app.route("/api/reports/sessions", methods=["GET"])
+def report_sessions():
+    try:
+        return jsonify({"sessions": reporting.list_sessions()})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/reports/session", methods=["GET"])
+def report_session_detail():
+    session_id = request.args.get("session_id")
+    try:
+        summary = reporting.summarize_session(session_id)
+        return jsonify(summary)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/reports/run", methods=["POST"])
+def run_report():
+    payload = request.get_json(silent=True) or {}
+    session_id = payload.get("session_id")
+    instructions = payload.get("instructions", "")
+    try:
+        report = reporting.generate_llm_report(session_id, instructions=instructions)
+        return jsonify(report)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/reports/page", methods=["POST"])
+def report_page():
+    payload = request.get_json(silent=True) or {}
+    session_id = payload.get("session_id")
+    url = payload.get("url")
+    if not url:
+        return jsonify({"error": "url is required"}), 400
+    try:
+        summary = reporting.summarize_page(session_id, url)
+        return jsonify(summary)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 if __name__ == "__main__":
