@@ -2,29 +2,31 @@ import json
 import re
 from llm.client import call_groq
 
-EXTRACTION_SYSTEM = """Tu es un expert en extraction d'informations structurées depuis du texte.
+# Nouveau prompt adaptatif
+EXTRACTION_SYSTEM = """Tu es un expert en visualisation de données et en langage Mermaid.js.
+Ta mission est d'analyser le texte et de choisir le MEILLEUR type de diagramme pour le représenter.
 
-Ta tâche est d'analyser le texte fourni et d'extraire :
-1. Les ENTITÉS : personnes, lieux, organisations, concepts, dates, technologies
-2. Les RELATIONS : liens sémantiques entre les entités
+Choix possibles :
+1. FLOWCHART (graph TD) : Pour les processus, étapes, algorithmes.
+2. TIMELINE (timeline) : Pour l'histoire, les chronologies, les dates.
+3. SEQUENCE (sequenceDiagram) : Pour les interactions entre acteurs.
+4. MINDMAP (mindmap) : Pour les concepts hiérarchiques.
+5. GRAPH (graph LR) : Pour les relations complexes (Knowledge Graph classique).
 
-RÈGLES STRICTES :
-- Retourne UNIQUEMENT un JSON valide
-- Pas de texte avant ou après le JSON
-- Pas de markdown (pas de ```json)
-- Format exact comme ci-dessous"""
+RÈGLES :
+- Retourne UNIQUEMENT un JSON valide.
+- Le champ 'mermaid_code' doit contenir le code brut valide.
+"""
 
 EXTRACTION_PROMPT = """
-Analyse ce texte et extrait les entités et relations.
+Analyse ce texte et génère le diagramme le plus adapté.
 
 Format JSON attendu :
 {{
-  "entities": [
-    {{"name": "Nom exact", "type": "Person|Location|Organization|Concept|Date|Technology"}}
-  ],
-  "relations": [
-    {{"source": "Entité source", "target": "Entité cible", "type": "type_relation"}}
-  ]
+  "diagram_type": "Flowchart|Timeline|Sequence|Mindmap|Graph",
+  "title": "Titre court du diagramme",
+  "summary": "Explication brève (1 phrase) du choix",
+  "mermaid_code": "Le code mermaid ici..."
 }}
 
 TEXTE À ANALYSER :
@@ -32,70 +34,37 @@ TEXTE À ANALYSER :
 {text}
 ---
 
-Retourne UNIQUEMENT le JSON sans autre texte :
+Retourne UNIQUEMENT le JSON :
 """
 
 def extract_knowledge(text: str) -> dict:
-    """Extrait entités et relations avec Groq"""
+    """Extrait une structure de diagramme adaptative avec Groq"""
     
-    # Limiter la taille du texte
-    text = text[:6000]  # Groq/Llama gère bien jusqu'à 6000 chars
-    
-    # Préparer le prompt
+    text = text[:6000]
     prompt = EXTRACTION_PROMPT.format(text=text)
-    
-    # Appeler Groq
     response = call_groq(prompt, system=EXTRACTION_SYSTEM)
     
     if not response:
-        print("   ⚠️  Pas de réponse de Groq")
-        return {"entities": [], "relations": []}
+        return None
     
     try:
-        # Nettoyer la réponse
+        # Nettoyage standard (comme avant)
         response = response.strip()
+        if "```json" in response: response = re.sub(r'```json\s*', '', response)
+        if "```" in response: response = re.sub(r'```\s*', '', response)
         
-        # Supprimer les balises markdown si présentes
-        if "```json" in response:
-            response = re.sub(r'```json\s*', '', response)
-        if "```" in response:
-            response = re.sub(r'```\s*', '', response)
-        
-        # Extraire le JSON s'il y a du texte autour
         json_match = re.search(r'\{.*\}', response, re.DOTALL)
-        if json_match:
-            response = json_match.group(0)
+        if json_match: response = json_match.group(0)
         
-        # Parser le JSON
         data = json.loads(response)
         
-        # Valider la structure
-        if not isinstance(data, dict):
-            raise ValueError("La réponse n'est pas un dictionnaire")
+        # Validation basique
+        if "mermaid_code" not in data:
+            raise ValueError("Pas de code Mermaid généré")
+            
+        print(f"   🧠 Type détecté: {data.get('diagram_type')} - {data.get('title')}")
+        return data
         
-        entities = data.get('entities', [])
-        relations = data.get('relations', [])
-        
-        # Valider les entités
-        if not isinstance(entities, list):
-            entities = []
-        
-        # Valider les relations
-        if not isinstance(relations, list):
-            relations = []
-        
-        print(f"   ✅ Extraction réussie: {len(entities)} entités, {len(relations)} relations")
-        
-        return {
-            "entities": entities,
-            "relations": relations
-        }
-        
-    except json.JSONDecodeError as e:
-        print(f"   ❌ Erreur JSON: {e}")
-        print(f"   Réponse brute (200 premiers chars): {response[:200]}...")
-        return {"entities": [], "relations": []}
-    
     except Exception as e:
         print(f"   ❌ Erreur extraction: {e}")
-        return {"entities": [], "relations": []}
+        return None

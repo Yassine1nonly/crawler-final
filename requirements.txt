@@ -9,14 +9,15 @@ pymongo>=4.6.0
 # Planification
 schedule>=1.2.0
 
-# LLM - GEMINI au lieu d'Anthropic
-google-genai>=1.0.0
+# LLM - Client Groq (via SDK OpenAI)
+openai>=1.0.0
+
 # Configuration
 python-dotenv>=1.0.0
 
 # Web app
 Flask>=3.0.0
-
+Flask-Cors>=4.0.0
 # Browser fallbacks
 playwright>=1.43.0
 selenium>=4.20.0
